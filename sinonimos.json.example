@@ -1,0 +1,10 @@
+{
+  "grupos": [
+    ["marca da loja", "nome fantasia", "sigla"],
+    ["whey isolado", "wpi", "isolado"]
+  ],
+  "mapeamentos": {
+    "vit c": ["vitamina c", "ascorbico", "acido ascorbico"],
+    "d3": ["vitamina d", "vitamina d3", "colecalciferol"]
+  }
+}

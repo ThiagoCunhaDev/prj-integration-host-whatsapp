@@ -1,28 +1,47 @@
-// Histórico de conversas por contato (IA regenerativa)
 const conversations = new Map();
 
-const SYSTEM_PROMPT = `Você é um assistente virtual de atendimento ao cliente via WhatsApp.
+const SYSTEM_PROMPT = `Você é o atendente virtual de uma loja no WhatsApp.
 
-Regras:
-- Responda sempre em português brasileiro.
-- Seja educado, objetivo e profissional.
-- Respostas curtas e diretas (máximo 2-3 parágrafos), adequadas para leitura no celular.
-- Use emojis com moderação para tornar a conversa amigável.
-- Mantenha o contexto da conversa para não repetir perguntas.
-- Se não souber a resposta, diga que vai verificar e retornar.
-- Valores monetários em R$ (formato brasileiro: R$ 1.234,56).
-- Horários no formato 24h (ex: 08:00, 14:30).`;
+Regras obrigatórias:
+- Responda sempre em português brasileiro (pt-BR).
+- Valores monetários: formato brasileiro (ex: R$ 1.234,56).
+- Quantidades e medidas: formato brasileiro (vírgula decimal, ex: 1,5 kg, 500 ml).
+- Horários no formato 24h (ex: 08:00, 14:30).
+- Seja educado, objetivo e profissional; respostas curtas (máximo 2-3 parágrafos).
+- Use emojis com moderação.
 
-async function getReply(contactId, message) {
+Sobre preços e produtos:
+- O preço do cliente é sempre o campo VALOR_VENDA (preço de venda). Nunca use outro campo de valor.
+- NUNCA invente preços, estoque ou nomes de produtos.
+- Use APENAS os dados em "PRODUTOS_ENCONTRADOS" quando existirem.
+- Se não houver produtos na consulta, peça o nome do produto ou o código de barras.
+- Se houver vários produtos listados, ajude o cliente a identificar qual deseja.
+- Não informe custo interno, margem ou dados fiscais (NCM, ICMS, etc.).`;
+
+async function getReply(contactId, message, productsContext = '') {
   if (!conversations.has(contactId)) {
     conversations.set(contactId, []);
   }
 
   const history = conversations.get(contactId);
-  history.push({ role: 'user', parts: [{ text: message }] });
+  let userText = message;
+
+  if (productsContext) {
+    userText =
+      `[Consulta do cliente]\n${message}\n\n` +
+      `[PRODUTOS_ENCONTRADOS — use somente estes dados para preços/estoque]\n` +
+      productsContext;
+  }
+
+  history.push({ role: 'user', parts: [{ text: userText }] });
 
   const apiKey = process.env.GEMINI_API_KEY;
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
+  if (!apiKey) {
+    return 'Configuração incompleta: defina GEMINI_API_KEY no arquivo .env.';
+  }
+
+  const url =
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
 
   const response = await fetch(url, {
     method: 'POST',
@@ -43,11 +62,14 @@ async function getReply(contactId, message) {
   }
 
   const data = await response.json();
-  const reply = data.candidates[0].content.parts[0].text;
+  const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!reply) {
+    return 'Não consegui gerar uma resposta. Tente reformular sua pergunta.';
+  }
 
   history.push({ role: 'model', parts: [{ text: reply }] });
 
-  // Limita histórico por contato (últimas 30 mensagens)
   if (history.length > 30) {
     conversations.set(contactId, history.slice(-20));
   }

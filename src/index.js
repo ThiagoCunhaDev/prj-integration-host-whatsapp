@@ -1,7 +1,12 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
-const { getReply, resetConversation } = require('./gemini');
+const { findConexaoIni } = require('./config');
+const { testConnection } = require('./database');
+const { handleCustomerMessage } = require('./handler');
+const { resetConversation } = require('./gemini');
 
 const client = new Client({
   authStrategy: new LocalAuth(),
@@ -33,7 +38,6 @@ client.on('auth_failure', (msg) => {
 });
 
 client.on('message', async (msg) => {
-  // Ignora mensagens de grupo, status e do próprio bot
   if (msg.from.includes('@g.us')) return;
   if (msg.from === 'status@broadcast') return;
   if (msg.fromMe) return;
@@ -43,18 +47,16 @@ client.on('message', async (msg) => {
 
   console.log(`💬 ${name} (${msg.from}): ${msg.body}`);
 
-  // Comando para resetar conversa
   if (msg.body.toLowerCase() === '/reset') {
     resetConversation(msg.from);
     await msg.reply('🔄 Conversa reiniciada! Como posso ajudar?');
     return;
   }
 
-  // Ignora mensagens vazias (mídia sem legenda, etc.)
   if (!msg.body || msg.body.trim() === '') return;
 
   try {
-    const reply = await getReply(msg.from, msg.body);
+    const reply = await handleCustomerMessage(msg.from, msg.body);
     await msg.reply(reply);
     console.log(`🤖 Resposta enviada para ${name}`);
   } catch (error) {
@@ -67,5 +69,24 @@ client.on('disconnected', (reason) => {
   console.log('🔌 Bot desconectado:', reason);
 });
 
-console.log('🚀 Iniciando bot do WhatsApp...');
-client.initialize();
+async function startup() {
+  console.log('🚀 Iniciando bot do WhatsApp (atendente virtual da loja)...');
+
+  const iniPath = findConexaoIni();
+  if (!iniPath) {
+    console.warn('⚠️  Conexao.ini não encontrado — consulta de preços indisponível.');
+  } else {
+    console.log(`📄 Conexao.ini: ${iniPath}`);
+    try {
+      const db = await testConnection();
+      console.log(`🗄️  Firebird OK — ${db.host}:${db.port} → ${db.database}`);
+    } catch (error) {
+      console.error('❌ Falha ao conectar no Firebird:', error.message);
+      console.error('   O bot iniciará, mas consultas de produto podem falhar.');
+    }
+  }
+
+  client.initialize();
+}
+
+startup();
